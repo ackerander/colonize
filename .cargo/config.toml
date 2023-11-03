@@ -1,0 +1,8 @@
+[alias]
+rr = "run --release"
+br = "build --release"
+rd = ["run", "--features", "bevy/dynamic_linking inspector"]
+bd = ["build", "--features", "bevy/dynamic_linking inspector"]
+
+[build]
+rustflags = ["-Ctarget-cpu=native"]
