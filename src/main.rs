@@ -1,15 +1,16 @@
-use bevy::{prelude::*, input::mouse::{MouseMotion, MouseWheel, MouseScrollUnit}};
+use bevy::{prelude::*, input::mouse::*};
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use toml::Value;
 use rand::Rng;
-use std::fs;
+use std::{fs, time::Duration};
 
 const G: f32 = 6.6743e-11;
 const FILE: &str = "assets/bodies.toml";
 
 #[derive(Component)]
 struct Body {
+    name: String,
     mass: f32,
     vel: Vec3,
 }
@@ -31,6 +32,7 @@ fn parse_bodies(
     for body_cfg in config["body"].as_array().expect("Incorrect format") {
         commands.spawn((
             Body {
+                name: body_cfg["name"].as_str().unwrap_or("Unnamed").to_owned(),
                 mass: body_cfg["mass"].as_float().unwrap_or(1.) as f32,
                 vel: parse_vec3(&body_cfg["velocity"]).unwrap_or(Vec3::ZERO),
             },
@@ -70,8 +72,8 @@ struct Solution {
     sum: (Vec3, Vec3)
 }
 
-fn update_bodies(mut bodies: Query<(&mut Transform, &mut Body)>, delta_t: Res<FixedTime>) {
-    let dt = delta_t.period.as_secs_f32();
+fn update_bodies(mut bodies: Query<(&mut Transform, &mut Body)>, delta_t: Res<Time>) {
+    let dt = delta_t.delta_seconds();
     let nbodies = bodies.iter().len();
     let mut y_vec: Vec<(Vec3, Vec3)> = Vec::new();
     y_vec.resize(nbodies, (Vec3::ZERO, Vec3::ZERO));
@@ -119,7 +121,7 @@ fn mouse_cam(
 ) {
     let (mut trans, mut proj) = cam_query.get_single_mut().unwrap();
     let mut delta = Vec2::ZERO;
-    for ev in ev_motion.iter() {
+    for ev in ev_motion.read() {
         delta += ev.delta;
     }
     if buttons.pressed(MouseButton::Right) {
@@ -135,10 +137,10 @@ fn mouse_cam(
     ev_motion.clear();
 
     if let Perspective(p) = proj.as_mut() {
-        for ev in ev_scroll.iter() {
+        for ev in ev_scroll.read() {
             match ev.unit {
-                MouseScrollUnit::Line => p.fov = (p.fov - 0.1 * ev.y).clamp(7.5f32.to_radians(), 150.0f32.to_radians()),
-                MouseScrollUnit::Pixel => p.fov = (p.fov - 0.1 * ev.y).clamp(7.5f32.to_radians(), 150.0f32.to_radians()),
+                MouseScrollUnit::Line => p.fov = (p.fov - 0.1 * ev.y).clamp(0.1f32.to_radians(), 180.0f32.to_radians()),
+                MouseScrollUnit::Pixel => p.fov = (p.fov - 0.1 * ev.y).clamp(0.1f32.to_radians(), 180.0f32.to_radians()),
             }
         }
     }
@@ -189,9 +191,9 @@ fn main() {
     );
     #[cfg(feature = "inspector")]
     app.add_plugins(WorldInspectorPlugin::new());
-    app.add_systems(Startup, (setup, parse_bodies))
+    app.insert_resource(Time::<Fixed>::from_duration(Duration::from_micros(15625)))
+       .add_systems(Startup, (setup, parse_bodies))
        .add_systems(Update, (mouse_cam, mv_cam))
-       .add_systems(FixedUpdate, update_bodies)
-       .insert_resource(FixedTime::new_from_secs(1. / 128.));
+       .add_systems(FixedUpdate, update_bodies);
     app.run();
 }
