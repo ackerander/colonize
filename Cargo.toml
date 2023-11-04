@@ -7,8 +7,9 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.11"
-rand = "0.8"
 bevy-inspector-egui = { version = "0.19", optional = true }
+toml = "0.8"
+rand = "0.8"
 
 [features]
 inspector = ["dep:bevy-inspector-egui"]

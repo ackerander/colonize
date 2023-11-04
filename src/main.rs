@@ -1,9 +1,12 @@
 use bevy::{prelude::*, input::mouse::MouseMotion};
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use toml::Value;
+use rand::Rng;
+use std::fs;
 
-// const G: f32 = 6.6743e-11;
-const G: f32 = 1.;
+const G: f32 = 6.6743e-11;
+const FILE: &str = "assets/bodies.toml";
 
 #[derive(Component)]
 struct Body {
@@ -11,47 +14,38 @@ struct Body {
     vel: Vec3,
 }
 
-fn setup(
+fn parse_bodies(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // bodies
-    const P:Vec3 = Vec3 { x: -1.0024277970, y: 0.0041695061, z: 0. };
-    const V:Vec3 = Vec3 { x: 0.3489048974, y: 0.5306305100, z: 0. };
-    commands.spawn((
-        Body {
-            mass: 1.,
-            vel: V,
-        },
-        PbrBundle {
-        mesh: meshes.add(shape::UVSphere{radius: 0.1, ..default()}.into()),
-        material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-        transform: Transform::from_translation(P),
-        ..default()
-    }));
-    commands.spawn((
-        Body {
-            mass: 1.,
-            vel: V,
-        },
-        PbrBundle {
-        mesh: meshes.add(shape::UVSphere{radius: 0.1, ..default()}.into()),
-        material: materials.add(Color::rgb(0.5, 0.3, 0.3).into()),
-        transform: Transform::from_translation(-P),
-        ..default()
-    }));
-    commands.spawn((
-        Body {
-            mass: 1.,
-            vel: -2. * V,
-        },
-        PbrBundle {
-        mesh: meshes.add(shape::UVSphere{radius: 0.1, ..default()}.into()),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.5).into()),
-        transform: Transform::from_translation(Vec3::ZERO),
-        ..default()
-    }));
+    let mut rng = rand::thread_rng();
+    let parse_vec3 = |val: &Value| -> Option<Vec3> {
+        let table = val.as_table()?;
+        let get_f = |key| Some(table[key].as_float()? as f32);
+        Some(Vec3::new(get_f("x")?, get_f("y")?, get_f("z")?))
+    };
+    let text = fs::read_to_string(FILE).expect("Failed to open file");
+    let config: Value = toml::from_str(text.as_str()).expect("Incorrect format");
+    for body_cfg in config["body"].as_array().expect("Incorrect format") {
+        commands.spawn((
+            Body {
+                mass: body_cfg["mass"].as_float().unwrap_or(1.) as f32,
+                vel: parse_vec3(&body_cfg["velocity"]).unwrap_or(Vec3::ZERO),
+            },
+            PbrBundle {
+                mesh: meshes.add(shape::UVSphere{
+                    radius: body_cfg["r"].as_float().unwrap_or(1.) as f32, ..default()
+                }.into()),
+                material: materials.add(Color::hsl(360. * rng.gen::<f32>(), 0.4, 0.4).into()),
+                transform: Transform::from_translation(parse_vec3(&body_cfg["position"]).unwrap_or(Vec3::ZERO)),
+                ..default()
+            }
+        ));
+    }
+}
+
+fn setup(mut commands: Commands) {
     // light
     commands.spawn(PointLightBundle {
         point_light: PointLight {
@@ -88,8 +82,7 @@ fn update_bodies(mut bodies: Query<(&mut Transform, &mut Body)>, delta_t: Res<Fi
             *y = (trans.translation + k_coefficient * soln.k.0, body.vel + k_coefficient * soln.k.1);
         }
         for (this_y, soln) in y_vec.iter().zip(&mut soln_vec) {
-            soln.k.0 = this_y.1;
-            soln.k.1 = Vec3::ZERO;
+            soln.k = (this_y.1, Vec3::ZERO);
             for ((_, body), other_y) in bodies.iter().zip(&y_vec) {
                 let d = other_y.0 - this_y.0;
                 let len_squared = d.length_squared();
@@ -174,7 +167,7 @@ fn main() {
     );
     #[cfg(feature = "inspector")]
     app.add_plugins(WorldInspectorPlugin::new());
-    app.add_systems(Startup, setup).add_systems(Update, (mouse_cam, mv_cam)).add_systems(FixedUpdate, update_bodies);
+    app.add_systems(Startup, (setup, parse_bodies)).add_systems(Update, (mouse_cam, mv_cam)).add_systems(FixedUpdate, update_bodies);
     app.insert_resource(FixedTime::new_from_secs(1. / 128.));
     app.run();
 }
