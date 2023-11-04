@@ -1,4 +1,4 @@
-use bevy::{prelude::*, input::mouse::MouseMotion};
+use bevy::{prelude::*, input::mouse::{MouseMotion, MouseWheel, MouseScrollUnit}};
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use toml::Value;
@@ -25,6 +25,7 @@ fn parse_bodies(
         let get_f = |key| Some(table[key].as_float()? as f32);
         Some(Vec3::new(get_f("x")?, get_f("y")?, get_f("z")?))
     };
+    // TODO: Better file handling
     let text = fs::read_to_string(FILE).expect("Failed to open file");
     let config: Value = toml::from_str(text.as_str()).expect("Incorrect format");
     for body_cfg in config["body"].as_array().expect("Incorrect format") {
@@ -109,47 +110,68 @@ fn update_bodies(mut bodies: Query<(&mut Transform, &mut Body)>, delta_t: Res<Fi
 }
 
 const SENSITIVITY: f32 = 0.001;
-const MOVE: f32 = 1.2;
-
-fn mouse_cam(mut ev_motion: EventReader<MouseMotion>, keys: Res<Input<KeyCode>>, mut cam: Query<&mut Transform, With<Camera>>) {
-    if keys.pressed(KeyCode::AltLeft) {
-        return;
-    }
-    let mut cam_trans = cam.get_single_mut().unwrap();
+use bevy::render::camera::Projection::Perspective;
+fn mouse_cam(
+    buttons: Res<Input<MouseButton>>,
+    mut ev_motion: EventReader<MouseMotion>,
+    mut ev_scroll: EventReader<MouseWheel>,
+    mut cam_query: Query<(&mut Transform, &mut Projection), With<Camera>>
+) {
+    let (mut trans, mut proj) = cam_query.get_single_mut().unwrap();
     let mut delta = Vec2::ZERO;
     for ev in ev_motion.iter() {
         delta += ev.delta;
     }
-    let yaw = Quat::from_rotation_y(-SENSITIVITY * delta.x);
-    let pitch = Quat::from_rotation_x(-SENSITIVITY * delta.y);
-    cam_trans.rotation = yaw * cam_trans.rotation * pitch;
+    if buttons.pressed(MouseButton::Right) {
+        let yaw = Quat::from_rotation_y(-SENSITIVITY * delta.x);
+        let pitch = Quat::from_rotation_x(-SENSITIVITY * delta.y);
+        trans.rotation = yaw * trans.rotation * pitch;
+    }
+    if buttons.pressed(MouseButton::Middle) {
+        let up = trans.up();
+        let left = trans.left();
+        trans.translation += 0.005 * (delta.x * left + delta.y * up);
+    }
     ev_motion.clear();
+
+    if let Perspective(p) = proj.as_mut() {
+        for ev in ev_scroll.iter() {
+            match ev.unit {
+                MouseScrollUnit::Line => p.fov = (p.fov - 0.1 * ev.y).clamp(7.5f32.to_radians(), 150.0f32.to_radians()),
+                MouseScrollUnit::Pixel => p.fov = (p.fov - 0.1 * ev.y).clamp(7.5f32.to_radians(), 150.0f32.to_radians()),
+            }
+        }
+    }
 }
 
-#[inline]
-fn combine(b0: bool, b1: bool) -> f32 {
-    return if b0 {MOVE} else {0.} - if b1 {MOVE} else {0.};
-}
-
+const MOVE: f32 = 1.2;
+const SPIN: f32 = 1.2;
 fn mv_cam(mut cam: Query<&mut Transform, With<Camera>>, keys: Res<Input<KeyCode>>, time: Res<Time>) {
     let mut cam_trans = cam.get_single_mut().unwrap();
     let pos = keys.pressed(KeyCode::W);
     let neg = keys.pressed(KeyCode::S);
-    if pos || neg {
+    if pos ^ neg {
         let forward = cam_trans.forward();
-        cam_trans.translation += combine(pos, neg) * time.delta_seconds() * forward;
+        cam_trans.translation += if pos {MOVE} else {-MOVE} * time.delta_seconds() * forward;
     }
     let pos = keys.pressed(KeyCode::D);
     let neg = keys.pressed(KeyCode::A);
-    if pos || neg {
+    if pos ^ neg {
         let right = cam_trans.right();
-        cam_trans.translation += combine(pos, neg) * time.delta_seconds() * right;
+        cam_trans.translation += if pos {MOVE} else {-MOVE} * time.delta_seconds() * right;
     }
     let pos = keys.pressed(KeyCode::ShiftLeft);
     let neg = keys.pressed(KeyCode::ControlLeft);
-    if pos || neg {
+    if pos ^ neg {
         let up = cam_trans.up();
-        cam_trans.translation += combine(pos, neg) * time.delta_seconds() * up;
+        cam_trans.translation += if pos {MOVE} else {-MOVE} * time.delta_seconds() * up;
+    }
+
+    let pos = keys.pressed(KeyCode::Q);
+    let neg = keys.pressed(KeyCode::E);
+    if pos ^ neg {
+        let forward = cam_trans.forward();
+        cam_trans.rotate_axis(forward, if pos {SPIN} else {-SPIN} * time.delta_seconds());
     }
 }
 
@@ -167,7 +189,9 @@ fn main() {
     );
     #[cfg(feature = "inspector")]
     app.add_plugins(WorldInspectorPlugin::new());
-    app.add_systems(Startup, (setup, parse_bodies)).add_systems(Update, (mouse_cam, mv_cam)).add_systems(FixedUpdate, update_bodies);
-    app.insert_resource(FixedTime::new_from_secs(1. / 128.));
+    app.add_systems(Startup, (setup, parse_bodies))
+       .add_systems(Update, (mouse_cam, mv_cam))
+       .add_systems(FixedUpdate, update_bodies)
+       .insert_resource(FixedTime::new_from_secs(1. / 128.));
     app.run();
 }
