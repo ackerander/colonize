@@ -1,8 +1,8 @@
-use bevy::{prelude::*, input::mouse::*};
+use bevy::{prelude::*, input::mouse::*, input::common_conditions::input_just_pressed};
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use toml::Value;
-use rand::Rng;
+// use rand::Rng;
 use std::{fs, time::Duration};
 
 const G: f32 = 6.6743e-11;
@@ -17,16 +17,18 @@ struct Body {
 
 fn parse_bodies(
     mut commands: Commands,
+    asset_server: ResMut<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let mut rng = rand::thread_rng();
+    // let mut rng = rand::thread_rng();
     let parse_vec3 = |val: &Value| -> Option<Vec3> {
         let table = val.as_table()?;
         let get_f = |key| Some(table[key].as_float()? as f32);
         Some(Vec3::new(get_f("x")?, get_f("y")?, get_f("z")?))
     };
     // TODO: Better file handling
+    let texture_handle: Handle<Image> = asset_server.load("tex_DebugUVTiles.png");
     let text = fs::read_to_string(FILE).expect("Failed to open file");
     let config: Value = toml::from_str(text.as_str()).expect("Incorrect format");
     for body_cfg in config["body"].as_array().expect("Incorrect format") {
@@ -40,7 +42,10 @@ fn parse_bodies(
                 mesh: meshes.add(shape::UVSphere{
                     radius: body_cfg["r"].as_float().unwrap_or(1.) as f32, ..default()
                 }.into()),
-                material: materials.add(Color::hsl(360. * rng.gen::<f32>(), 0.4, 0.4).into()),
+                material: materials.add(StandardMaterial {
+                    base_color_texture: Some(texture_handle.clone()),
+                    ..default()
+                }),
                 transform: Transform::from_translation(parse_vec3(&body_cfg["position"]).unwrap_or(Vec3::ZERO)),
                 ..default()
             }
@@ -177,6 +182,14 @@ fn mv_cam(mut cam: Query<&mut Transform, With<Camera>>, keys: Res<Input<KeyCode>
     }
 }
 
+fn toggle_pause(mut time: ResMut<Time<Virtual>>) {
+    if time.is_paused() {
+        time.unpause();
+    } else {
+        time.pause();
+    }
+}
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(
@@ -193,7 +206,7 @@ fn main() {
     app.add_plugins(WorldInspectorPlugin::new());
     app.insert_resource(Time::<Fixed>::from_duration(Duration::from_micros(15625)))
        .add_systems(Startup, (setup, parse_bodies))
-       .add_systems(Update, (mouse_cam, mv_cam))
+       .add_systems(Update, (mouse_cam, mv_cam, toggle_pause.run_if(input_just_pressed(KeyCode::Space))))
        .add_systems(FixedUpdate, update_bodies);
     app.run();
 }
