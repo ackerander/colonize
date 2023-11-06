@@ -5,6 +5,7 @@ r = 0.1
 mass = 1.4998e10
 position = { x = -0.97000436, y = 0.24308753, z = 0.0 }
 velocity = { x = 0.4662036850, y = 0.4323657300, z = 0.0 }
+angular_vel = { x = 0.0, y = 0.0, z = 0.7 }
 
 [[body]]
 name = "Bravo"
@@ -12,6 +13,7 @@ r = 0.1
 mass = 1.4998e10
 position = { x = 0.97000436, y = -0.24308753, z = 0.0 }
 velocity = { x = 0.4662036850, y = 0.4323657300, z = 0.0 }
+angular_vel = { x = 0.0, y = 0.0, z = 0.7 }
 
 [[body]]
 name = "Charlie"
@@ -19,3 +21,4 @@ r = 0.1
 mass = 1.4998e10
 position = { x = 0.0, y = 0.0, z = 0.0 }
 velocity = { x = -0.93240737, y = -0.86473146, z = 0.0 }
+angular_vel = { x = 0.0, y = 0.0, z = 0.7 }

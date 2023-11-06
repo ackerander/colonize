@@ -1,8 +1,8 @@
 [alias]
 rr = "run --release"
 br = "build --release"
-rd = ["run", "--features", "bevy/dynamic_linking"]
-bd = ["build", "--features", "bevy/dynamic_linking"]
+rd = ["run", "--features", "bevy/dynamic_linking inspector"]
+bd = ["build", "--features", "bevy/dynamic_linking inspector"]
 # rd = ["run", "--features", "bevy/dynamic_linking inspector"]
 # bd = ["build", "--features", "bevy/dynamic_linking inspector"]
 
