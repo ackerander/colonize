@@ -7,10 +7,10 @@ use core::f32::consts::PI;
 
 const G: f32 = 6.6743e-11;
 const FILE: &str = "assets/bodies.toml";
-const ACTIVATION_MAX: f32 = 120.;
-const ACTIVATION_S: f32 = 0.5;
+const ACTIVATION_MAX: f32 = 105.;
+// const ACTIVATION_S: f32 = 0.5;
 // const ACTIVATION_B: f32 = (ACTIVATION_S / ACTIVATION_MAX).exp();
-const ACTIVATION_B: f32 = 1.00417535929111852966;
+const ACTIVATION_B: f32 = 1.00477326064844708774;
 
 #[derive(Component)]
 struct Body {
@@ -68,6 +68,10 @@ struct CenterCam {
     offset: Vec3,
 }
 
+fn calc_fov(x: f32) -> f32 {
+    ACTIVATION_MAX * (1. - ACTIVATION_B.powf(-x))
+}
+
 fn setup(mut commands: Commands) {
     // light
     commands.spawn(PointLightBundle {
@@ -80,11 +84,16 @@ fn setup(mut commands: Commands) {
         ..default()
     });
     // camera
+    let center = CenterCam { focus: CamFocus::Point(Vec3::ZERO), offset: Vec3::new(0., 3., 0.) };
     commands.spawn((Camera3dBundle {
-            transform: Transform::from_xyz(0., 4., 0.).looking_at(Vec3::ZERO, Vec3::Z),
+            transform: Transform::from_translation(center.offset).looking_at(Vec3::ZERO, Vec3::Z),
+            projection: Projection::Perspective(PerspectiveProjection {
+                fov: calc_fov(center.offset.length()),
+                ..default()
+            }),
             ..default()
         },
-        CenterCam { focus: CamFocus::Point(Vec3::ZERO), offset: Vec3::new(0., 4., 0.) }
+        center
     ));
 }
 
@@ -103,7 +112,7 @@ fn mouse_cam(
     }
     if buttons.pressed(MouseButton::Right) {
         match center.focus {
-            CamFocus::Entity(e) => (),
+            CamFocus::Entity(_) => (),
             CamFocus::Point(p) => {
                 // let angle = Vec3::Z.angle_between(center.offset);
                 let angle = PI - trans.forward().z.acos();
@@ -117,10 +126,11 @@ fn mouse_cam(
     }
     if buttons.pressed(MouseButton::Middle) {
         if let CamFocus::Point(p) = &mut center.focus {
-            let dolly = 0.005 * (delta.x * trans.left() + delta.y * trans.up());
+            let left = trans.left();
+            let forward = Vec2::new(left.y, -left.x).normalize().extend(0.);
+            let dolly = 0.005 * (delta.x * left + delta.y * forward);
             *p += dolly;
             trans.translation += dolly;
-            println!("{}", p);
         }
     }
     ev_motion.clear();
@@ -129,8 +139,15 @@ fn mouse_cam(
     if let Perspective(p) = proj.as_mut() {
         for ev in ev_scroll.read() {
             match ev.unit {
-                MouseScrollUnit::Line => p.fov = (p.fov * (1. - 0.2 * ev.y)).clamp(0.1f32.to_radians(), 180.0f32.to_radians()),
-                MouseScrollUnit::Pixel => p.fov = (p.fov * (1. - 0.2 * ev.y)).clamp(0.1f32.to_radians(), 180.0f32.to_radians()),
+                MouseScrollUnit::Line => {
+                    let delta = -0.2 * ev.y;
+                    let len = center.offset.length();
+                    let delta_vec = (delta / len) * center.offset;
+                    center.offset += delta_vec;
+                    trans.translation += delta_vec;
+                    p.fov = calc_fov(len + delta);
+                },
+                MouseScrollUnit::Pixel => (),
             }
         }
     }
