@@ -38,7 +38,8 @@ impl Octree {
         if let Ok((_, Transform { translation, .. }, Body { mass, .. })) = query.get(new) {
             let bvec = translation.cmpge(self.pos);
             let origin = self.pos - Vec3::select(bvec, Vec3::ZERO, Vec3::splat(self.size));
-            let offset = origin + Vec3::splat(2. * self.size);
+            let middle = origin + Vec3::splat(self.size);
+            // New node replacing root
             let mut tree = Octree {
                 pos: origin,
                 size: 2. * self.size,
@@ -53,66 +54,32 @@ impl Octree {
                     },
                     children: Box::new([
                             Octree { pos: origin, size: self.size, ..default() },
-                            Octree { pos: Self::idx_offset(offset, origin, 1), size: self.size, ..default() },
-                            Octree { pos: Self::idx_offset(offset, origin, 2), size: self.size, ..default() },
-                            Octree { pos: Self::idx_offset(offset, origin, 3), size: self.size, ..default() },
-                            Octree { pos: Self::idx_offset(offset, origin, 4), size: self.size, ..default() },
-                            Octree { pos: Self::idx_offset(offset, origin, 5), size: self.size, ..default() },
-                            Octree { pos: Self::idx_offset(offset, origin, 6), size: self.size, ..default() },
-                            Octree { pos: offset, size: self.size, ..default() },
+                            Octree { pos: Self::idx_offset(middle, origin, 1), size: self.size, ..default() },
+                            Octree { pos: Self::idx_offset(middle, origin, 2), size: self.size, ..default() },
+                            Octree { pos: Self::idx_offset(middle, origin, 3), size: self.size, ..default() },
+                            Octree { pos: Self::idx_offset(middle, origin, 4), size: self.size, ..default() },
+                            Octree { pos: Self::idx_offset(middle, origin, 5), size: self.size, ..default() },
+                            Octree { pos: Self::idx_offset(middle, origin, 6), size: self.size, ..default() },
+                            Octree { pos: middle, size: self.size, ..default() },
                     ]),
                 },
             };
-            println!("Before: {:?}", self);
             std::mem::swap(self, &mut tree);
             let contained = self.contains(*translation);
-            // tree messed up
-            println!("After: {:?}", tree);
             if let OctNode::Branch { ref mut com, ref mut children } = self.node {
-                let idx = tree.pos.cmplt(offset).bitmask();
-                children[idx as usize] = tree;
+                let tree_idx = tree.pos.cmpge(middle).bitmask();
+                children[tree_idx as usize] = tree;
                 if contained {
-                    children[translation.cmplt(offset).bitmask() as usize].node = OctNode::Leaf(new);
+                    let body_idx = translation.cmpge(middle).bitmask();
+                    // assert_ne!(tree_idx, body_idx); // fixed
+                    children[body_idx as usize].node = OctNode::Leaf(new);
                     com.add(*translation, *mass);
                 } else {
                     self.add_super(query, new);
                 }
+            } else {
+                panic!("Should be Branch!");
             }
-            // let mut new_children = Box::new([
-            //     Octree { pos: origin, size: self.size, ..default() },
-            //     Octree { pos: Self::idx_offset(offset, origin, 1), size: self.size, ..default() },
-            //     Octree { pos: Self::idx_offset(offset, origin, 2), size: self.size, ..default() },
-            //     Octree { pos: Self::idx_offset(offset, origin, 3), size: self.size, ..default() },
-            //     Octree { pos: Self::idx_offset(offset, origin, 4), size: self.size, ..default() },
-            //     Octree { pos: Self::idx_offset(offset, origin, 5), size: self.size, ..default() },
-            //     Octree { pos: Self::idx_offset(offset, origin, 6), size: self.size, ..default() },
-            //     Octree { pos: offset, size: self.size, ..default() },
-            // ]);
-            // let tree = Octree {
-            //     pos: self.pos,
-            //     size: self.size,
-            //     node: match &mut self.node {
-            //         OctNode::Empty => OctNode::Empty,
-            //         OctNode::Leaf(e) => OctNode::Leaf(*e),
-            //         OctNode::Branch { com, ref mut children } => {
-            //             std::mem::swap(&mut new_children, children);
-            //             let node = OctNode::Branch { com: *com, children: new_children };
-            //             node
-            //         }
-            //     },
-            // };
-            // self.pos = origin;
-            // self.size *= 2.;
-            // if let OctNode::Branch { com, ref mut children } = self.node {
-            //     let bvec = self.pos.cmpge(origin);
-            //     children[bvec.bitmask() as usize] = tree;
-            //     if self.contains(trans.translation) {
-            //         let bvec = trans.translation.cmpge(origin);
-            //         children[bvec.bitmask() as usize].node = OctNode::Leaf(new);
-            //     } else {
-            //         self.add_super(query, new);
-            //     }
-            // }
         }
     }
     fn add_sub(&mut self, query: &Query<(Entity, &Transform, &Body)>, new: Entity) {
@@ -372,14 +339,32 @@ mod octree_tests {
     }
     #[test]
     fn add_super() {
-        let mut app1 = App::new();
-        let entities1 = [
-            app1.world.spawn(build_body(Vec3::new(1., 0., 0.), 1.)).id(),
-            app1.world.spawn(build_body(Vec3::new(0., 1., 0.), 1.)).id(),
-            app1.world.spawn(build_body(Vec3::new(0., 0., 1.), 1.)).id(),
+        let mut app = App::new();
+        let entities = [
+            app.world.spawn(build_body(Vec3::new(1., 0., 0.), 1.)).id(),
+            app.world.spawn(build_body(Vec3::new(0., 1., 0.), 1.)).id(),
+            app.world.spawn(build_body(Vec3::new(0., 0., 1.), 1.)).id(),
         ];
-        app1.insert_resource(Octree::empty(Vec3::ZERO, 1.))
+        app.insert_resource(Octree::empty(Vec3::ZERO, 1.))
             .add_systems(Startup, build_tree).update();
-        assert_eq!(*app1.world.resource::<Octree>(), Octree::empty(Vec3::new(0., 0., 0.), 2.));
+        // Should not be equal to an empty tree, idiot!
+        // answer = Octree::empty(Vec3::ZERO, 2.);
+        let answer = Octree {
+            pos: Vec3::ZERO, size: 2.,
+            node: OctNode::Branch {
+                com: COM { sum: Vec3::new(1., 1., 1.), mass: 3. },
+                children: Box::new([
+                    Octree::empty(Vec3::ZERO, 1.),
+                    Octree::leaf_unchecked(Vec3::X, 1., entities[0]),
+                    Octree::leaf_unchecked(Vec3::Y, 1., entities[1]),
+                    Octree::empty(Vec3::new(1., 1., 0.), 1.),
+                    Octree::leaf_unchecked(Vec3::Z, 1., entities[2]),
+                    Octree::empty(Vec3::new(1., 0., 1.), 1.),
+                    Octree::empty(Vec3::new(0., 1., 1.), 1.),
+                    Octree::empty(Vec3::splat(1.), 1.),
+                ])
+            }
+        };
+        assert_eq!(*app.world.resource::<Octree>(), answer);
     }
 }
