@@ -71,14 +71,14 @@ impl Octree {
                 children[tree_idx as usize] = tree;
                 if contained {
                     let body_idx = translation.cmpge(middle).bitmask();
-                    // assert_ne!(tree_idx, body_idx); // fixed
+                    // assert_ne!(tree_idx, body_idx);
                     children[body_idx as usize].node = OctNode::Leaf(new);
                     com.add(*translation, *mass);
                 } else {
                     self.add_super(query, new);
                 }
-            } else {
-                panic!("Should be Branch!");
+            // } else {
+            //     panic!("Should be Branch!");
             }
         }
     }
@@ -347,8 +347,6 @@ mod octree_tests {
         ];
         app.insert_resource(Octree::empty(Vec3::ZERO, 1.))
             .add_systems(Startup, build_tree).update();
-        // Should not be equal to an empty tree, idiot!
-        // answer = Octree::empty(Vec3::ZERO, 2.);
         let answer = Octree {
             pos: Vec3::ZERO, size: 2.,
             node: OctNode::Branch {
@@ -362,6 +360,49 @@ mod octree_tests {
                     Octree::empty(Vec3::new(1., 0., 1.), 1.),
                     Octree::empty(Vec3::new(0., 1., 1.), 1.),
                     Octree::empty(Vec3::splat(1.), 1.),
+                ])
+            }
+        };
+        assert_eq!(*app.world.resource::<Octree>(), answer);
+    }
+    #[test]
+    fn add_super2() {
+        let mut app = App::new();
+        let entities = [
+            app.world.spawn(build_body(Vec3::new(1., 0., 0.), 1.)).id(),
+            app.world.spawn(build_body(Vec3::new(-1., 0., 0.), 1.)).id(),
+        ];
+        app.insert_resource(Octree::empty(Vec3::ZERO, 1.))
+            .add_systems(Startup, build_tree).update();
+        let answer = Octree {
+            pos: Vec3::new(-2., 0., 0.), size: 4.,
+            node: OctNode::Branch {
+                com: COM { sum: Vec3::ZERO, mass: 2. },
+                children: Box::new([
+                    Octree::leaf_unchecked(Vec3::new(-2., 0., 0.), 2., entities[1]),
+                    // Octree::leaf_unchecked(Vec3::ZERO, 2., entities[0]),
+                    Octree {
+                        pos: Vec3::ZERO, size: 2.,
+                        node: OctNode::Branch {
+                            com: COM { sum: Vec3::new(1., 0., 0.), mass: 1. },
+                            children: Box::new([
+                                Octree::empty(Vec3::ZERO, 1.),
+                                Octree::leaf_unchecked(Vec3::X, 1., entities[0]),
+                                Octree::empty(Vec3::Y, 1.),
+                                Octree::empty(Vec3::new(1., 1., 0.), 1.),
+                                Octree::empty(Vec3::Z, 1.),
+                                Octree::empty(Vec3::new(1., 0., 1.), 1.),
+                                Octree::empty(Vec3::new(0., 1., 1.), 1.),
+                                Octree::empty(Vec3::splat(1.), 1.),
+                            ])
+                        }
+                    },
+                    Octree::empty(Vec3::new(-2., 2., 0.), 2.),
+                    Octree::empty(Vec3::new(0., 2., 0.), 2.),
+                    Octree::empty(Vec3::new(-2., 0., 2.), 2.),
+                    Octree::empty(Vec3::new(0., 0., 2.), 2.),
+                    Octree::empty(Vec3::new(-2., 2., 2.), 2.),
+                    Octree::empty(Vec3::new(0., 2., 2.), 2.),
                 ])
             }
         };
