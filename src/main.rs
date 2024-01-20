@@ -4,7 +4,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use std::time::Duration;
 mod body;
 mod camera;
-mod bvh;
+mod octree;
 
 fn setup(mut commands: Commands) {
     // light
